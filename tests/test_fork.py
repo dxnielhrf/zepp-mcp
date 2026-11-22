@@ -10,6 +10,7 @@ import pytest
 
 from zepp_mcp import auth, server
 from zepp_mcp import client as api
+from zepp_mcp import login as login_cli
 
 
 def _tool_names() -> set[str]:
@@ -65,3 +66,41 @@ def test_401_in_token_only_mode_keeps_token_and_skips_login(monkeypatch, tmp_pat
     assert outcome.http_status == 401 and outcome.status == "error"
     assert seen == ["api-mifit-de2.zepp.com"]          # one data call, no auth host
     assert (tmp_path / "token.json").is_file()
+
+
+# -- zepp-login ----------------------------------------------------------------
+
+def _login_env(monkeypatch, tmp_path, fake_login):
+    monkeypatch.setenv("ZEPP_TOKEN_CACHE", str(tmp_path / "token.json"))
+    monkeypatch.setenv("ZEPP_EMAIL", "a@example.com")
+    monkeypatch.setattr(login_cli.getpass, "getpass", lambda prompt: "pw")
+    calls: list[str] = []
+
+    def counting(http, email, password, country):
+        calls.append(email)
+        return fake_login()
+
+    monkeypatch.setattr(login_cli.auth, "login", counting)
+    return calls
+
+
+def test_zepp_login_stores_token_after_one_attempt(monkeypatch, tmp_path, capsys):
+    calls = _login_env(monkeypatch, tmp_path, lambda: auth.Credential(
+        app_token="secret-token", user_id="1", region_host="api-mifit-de2.zepp.com",
+        country_code="DE", expires_at=time.time() + 30 * 86400))
+    assert login_cli.main() == 0
+    assert calls == ["a@example.com"]
+    assert auth.load_cached().app_token == "secret-token"
+    assert (tmp_path / "token.json").stat().st_mode & 0o777 == 0o600
+    out = capsys.readouterr()
+    assert "secret-token" not in out.out + out.err and "pw" not in out.out
+
+
+def test_zepp_login_failure_is_not_retried(monkeypatch, tmp_path):
+    def reject():
+        raise auth.LoginError("rejected")
+
+    calls = _login_env(monkeypatch, tmp_path, reject)
+    assert login_cli.main() == 1
+    assert len(calls) == 1
+    assert not (tmp_path / "token.json").exists()

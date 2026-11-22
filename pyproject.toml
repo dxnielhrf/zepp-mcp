@@ -40,6 +40,7 @@ Changelog = "https://github.com/DhavalBhimani44/zepp-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]
 zepp-mcp = "zepp_mcp.server:main"
+zepp-login = "zepp_mcp.login:main"
 
 [build-system]
 requires = ["hatchling"]
