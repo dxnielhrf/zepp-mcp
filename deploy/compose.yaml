@@ -1,0 +1,50 @@
+name: zepp-mcp
+
+services:
+  zepp:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: zepp-mcp:local
+    restart: unless-stopped
+    # No published port: only the caddy service reaches it.
+    environment:
+      ZEPP_COUNTRY: ${ZEPP_COUNTRY:-DE}
+      ZEPP_TIMEZONE: ${ZEPP_TIMEZONE:-Europe/Berlin}
+    volumes:
+      - zepp-token:/data/zepp
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [zepp]
+    ports:
+      - "${PUBLISH_PORT:-8080}:8080"
+    # KEY=VALUE file with MCP_BEARER_TOKEN, outside the repository, root-only.
+    env_file:
+      - ${BEARER_ENV_FILE:?set BEARER_ENV_FILE to the bearer token file}
+    # Refuse to start without a real token: an empty one would let "Bearer " through.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - '[ $${#MCP_BEARER_TOKEN} -ge 32 ] || { echo "MCP_BEARER_TOKEN missing or shorter than 32 characters" >&2; exit 1; }; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    read_only: true
+    tmpfs:
+      - /data
+      - /config
+    cap_drop: [ALL]
+    # The image grants caddy this file capability; without it exec fails.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  zepp-token: {}
