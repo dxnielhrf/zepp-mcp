@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
-from zepp_mcp import server
+import httpx
+import pytest
+
+from zepp_mcp import auth, server
+from zepp_mcp import client as api
 
 
 def _tool_names() -> set[str]:
@@ -15,3 +20,48 @@ def test_raw_request_tool_is_not_exposed():
     names = _tool_names()
     assert "zepp_raw_request" not in names
     assert len(names) == 13
+
+
+# -- token-only mode (no ZEPP_PASSWORD) ---------------------------------------
+
+def _client(monkeypatch, tmp_path, status: int):
+    monkeypatch.setenv("ZEPP_TOKEN_CACHE", str(tmp_path / "token.json"))
+    monkeypatch.delenv("ZEPP_EMAIL", raising=False)
+    monkeypatch.delenv("ZEPP_PASSWORD", raising=False)
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        return httpx.Response(status, json={})
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    return api.ZeppClient(None, None, "DE", http=http, min_interval=0,
+                          cache=False), seen
+
+
+def _cache_token():
+    auth.save_cached(auth.Credential(
+        app_token="t", user_id="1", region_host="api-mifit-de2.zepp.com",
+        country_code="DE", expires_at=time.time() + 30 * 86400))
+
+
+def test_from_env_needs_no_credentials(monkeypatch):
+    monkeypatch.delenv("ZEPP_EMAIL", raising=False)
+    monkeypatch.delenv("ZEPP_PASSWORD", raising=False)
+    assert isinstance(api.from_env(), api.ZeppClient)
+
+
+def test_no_token_and_no_password_never_logs_in(monkeypatch, tmp_path):
+    client, seen = _client(monkeypatch, tmp_path, 200)
+    with pytest.raises(auth.LoginError, match="zepp-login"):
+        client.credential()
+    assert seen == []
+
+
+def test_401_in_token_only_mode_keeps_token_and_skips_login(monkeypatch, tmp_path):
+    client, seen = _client(monkeypatch, tmp_path, 401)
+    _cache_token()
+    outcome = client.get("/v1/data/band_data.json", {})
+    assert outcome.http_status == 401 and outcome.status == "error"
+    assert seen == ["api-mifit-de2.zepp.com"]          # one data call, no auth host
+    assert (tmp_path / "token.json").is_file()

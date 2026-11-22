@@ -10,6 +10,10 @@ Two behaviours matter more than the plumbing:
   "you didn't exercise that week" is stating a fault as a fact.
 * A 401 means the app_token expired. The client re-authenticates once, then
   gives up -- it never loops against the auth endpoint.
+* Fork: without ZEPP_PASSWORD the client is token-only. It never logs in on
+  its own (no password means every attempt would fail and count toward the
+  10-attempt lockout), and a 401 keeps the cached token. A fresh token comes
+  from the interactive `zepp-login` command.
 """
 
 from __future__ import annotations
@@ -27,6 +31,14 @@ import httpx
 
 from .auth import Credential, LoginError, clear_cached, load_cached, login, save_cached
 
+NO_TOKEN_MESSAGE = (
+    "No valid Zepp token is cached and ZEPP_PASSWORD is not set, so this "
+    "server will not log in by itself. Run `zepp-login` once (interactive)."
+)
+TOKEN_REJECTED_MESSAGE = (
+    "Zepp rejected the cached token (HTTP 401). The token was kept. If this "
+    "persists, run `zepp-login` again."
+)
 
 @dataclass
 class Outcome:
@@ -191,7 +203,7 @@ def _cache_ttl(params: dict[str, Any], status: str = "ok") -> float:
 
 
 class ZeppClient:
-    def __init__(self, email: str, password: str, country: str = "US",
+    def __init__(self, email: str | None, password: str | None, country: str = "US",
                  http: httpx.Client | None = None,
                  min_interval: float | None = None,
                  cache: bool | None = None) -> None:
@@ -226,6 +238,8 @@ class ZeppClient:
         if cached:
             self._credential = cached
             return cached
+        if not (self._email and self._password):
+            raise LoginError(NO_TOKEN_MESSAGE)
         self._credential = login(
             self._client, self._email, self._password, self._country
         )
@@ -248,6 +262,12 @@ class ZeppClient:
 
         credential = self.credential()
         outcome = self._request(credential, path, params)
+        if outcome.http_status == 401 and not self._password:
+            # Token-only mode: keep the token (one odd 401 must not throw
+            # away a 30-day credential) and never attempt a login.
+            self._credential = None
+            return Outcome("error", 401, note=TOKEN_REJECTED_MESSAGE,
+                           error_kind="unauthorized")
         if outcome.http_status == 401:
             try:
                 credential = self._reauthenticate()
@@ -747,13 +767,10 @@ def parse_lactate_threshold_events(payload: Any) -> list[dict[str, Any]]:
 
 
 def from_env() -> ZeppClient:
-    email = os.environ.get("ZEPP_EMAIL")
-    password = os.environ.get("ZEPP_PASSWORD")
-    if not email or not password:
-        raise LoginError(
-            "ZEPP_EMAIL and ZEPP_PASSWORD are not set. Put them in .env next "
-            "to pyproject.toml, or in the server's environment."
-        )
+    # Fork: both optional. Without a password the client runs on the token
+    # cache only (see ZeppClient.credential).
+    email = os.environ.get("ZEPP_EMAIL") or None
+    password = os.environ.get("ZEPP_PASSWORD") or None
     return ZeppClient(email, password, os.environ.get("ZEPP_COUNTRY", "US"))
 
 
