@@ -28,7 +28,7 @@ services:
       - "${PUBLISH_PORT:-8080}:8080"
     # KEY=VALUE file with MCP_BEARER_TOKEN, outside the repository, root-only.
     env_file:
-      - ${BEARER_ENV_FILE:?set BEARER_ENV_FILE to the bearer token file}
+      - ${BEARER_ENV_FILE:-/etc/zepp-mcp/bearer.env}
     # Refuse to start without a real token: an empty one would let "Bearer " through.
     entrypoint:
       - /bin/sh
@@ -41,7 +41,8 @@ services:
       - /data
       - /config
     cap_drop: [ALL]
-    # The image grants caddy this file capability; without it exec fails.
+    # The official image sets this file capability on /usr/bin/caddy, and exec fails
+    # when it is missing from the bounding set. Not yet verified on this stack.
     cap_add: [NET_BIND_SERVICE]
     security_opt:
       - no-new-privileges:true

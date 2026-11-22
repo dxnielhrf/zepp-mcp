@@ -12,8 +12,7 @@ umask 077; printf 'MCP_BEARER_TOKEN=%s\n' "$(openssl rand -hex 32)" > /etc/zepp-
 # 2. Optional: run the test suite on Linux
 docker build -f deploy/Dockerfile --target test .
 
-# 3. Build and start
-export BEARER_ENV_FILE=/etc/zepp-mcp/bearer.env
+# 3. Build and start (BEARER_ENV_FILE defaults to /etc/zepp-mcp/bearer.env)
 docker compose -f deploy/compose.yaml up -d --build
 
 # 4. One interactive Zepp login (password via getpass, one attempt, only the token is kept)
