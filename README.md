@@ -284,7 +284,7 @@ flowchart TB
 
         subgraph proc["zepp-mcp · local child process"]
             direction TB
-            tools["<b>server.py</b><br/>14 MCP tools"]
+            tools["<b>server.py</b><br/>13 MCP tools"]
             norm["<b>workouts.py · decode.py · events.py · analysis.py</b><br/>stream decoding · lap splitting · event decoding<br/>sentinel stripping · unit attribution · aggregates"]
             http["<b>client.py</b><br/>empty-200 classifier · re-auth once<br/>pagination · in-memory cache · pacing"]
             auth["<b>auth.py</b><br/>password login · region discovery"]
@@ -335,7 +335,6 @@ does not mean a fresh login against Zepp's shared 10-attempt lockout.
 | `zepp_body_composition` | Smart-scale weight, BMI, and (real scale sync only) body fat/water/muscle %, bone mass, visceral fat, BMR |
 | `zepp_profile` | Height, weight, age, wear hand, paired devices. Never names, locations or device keys |
 | `zepp_describe_schema` | The metric catalogue: units, sources, verification level, known gaps |
-| `zepp_raw_request` | Arbitrary GET, for endpoints not modelled yet |
 | `zepp_auth_status` | Token expiry and region host |
 
 Every value says whether it was **measured** by the watch or **derived** by

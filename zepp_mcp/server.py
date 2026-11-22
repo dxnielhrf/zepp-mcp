@@ -1243,22 +1243,8 @@ def zepp_describe_schema() -> dict[str, Any]:
     }
 
 
-@server.tool(
-    description="Send an arbitrary GET to the Zepp API. Use this to reach "
-                "endpoints this server does not model yet."
-)
-def zepp_raw_request(
-    path: str,
-    params: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Args: path such as /v1/data/band_data.json, plus query params. The
-    user id and auth header are supplied automatically."""
-    if not path.startswith("/"):
-        return {"status": "error", "error": "path must start with '/'"}
-    try:
-        return _get_client().get(path, params or {}).as_dict()
-    except Exception as exc:
-        return _fail(exc)
+# Fork: zepp_raw_request removed. An arbitrary authenticated GET exposes the
+# whole account (including device keys) to any connected client.
 
 
 @server.tool(description="Check the stored Zepp credential and connection.")

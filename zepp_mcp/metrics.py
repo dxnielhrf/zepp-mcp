@@ -593,7 +593,7 @@ CATALOGUE: tuple[Metric, ...] = (
         "file index",
         "GET /users/me/fileInfo/events",
         "second_heart_rate/real_data",
-        "zepp_raw_request",
+        "-",  # fork: zepp_raw_request removed
         4,
         limitations="the index decodes; the route that serves the files is unknown",
     ),
@@ -603,7 +603,7 @@ CATALOGUE: tuple[Metric, ...] = (
         "unknown",
         _V2,
         "Charge/stress_data stressInfo",
-        "zepp_raw_request",
+        "-",  # fork: zepp_raw_request removed
         5,
         limitations="base64 binary, layout unknown",
     ),
@@ -613,7 +613,7 @@ CATALOGUE: tuple[Metric, ...] = (
         "unknown",
         "GET /v2/watch/users/{uid}/WatchSportStatistics/SPORT_LOAD",
         "-",
-        "zepp_raw_request",
+        "-",  # fork: zepp_raw_request removed
         5,
         limitations="HTTP 500 with no parameters",
     ),
