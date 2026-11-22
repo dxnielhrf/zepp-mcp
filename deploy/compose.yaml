@@ -11,8 +11,17 @@ services:
     environment:
       ZEPP_COUNTRY: ${ZEPP_COUNTRY:-DE}
       ZEPP_TIMEZONE: ${ZEPP_TIMEZONE:-Europe/Berlin}
+      ZEPP_CREDENTIALS_FILE: /run/secrets/zepp_credentials
     volumes:
       - zepp-token:/data/zepp
+      # Line 1 e-mail, line 2 password, for one automatic login per rejected token.
+      # An empty file means token-only mode. See deploy/set-credentials.sh.
+      - type: bind
+        source: ${ZEPP_CREDENTIALS:-/etc/zepp-mcp/credentials}
+        target: /run/secrets/zepp_credentials
+        read_only: true
+        bind:
+          create_host_path: false
     read_only: true
     tmpfs:
       - /tmp

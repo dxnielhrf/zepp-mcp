@@ -46,6 +46,7 @@ def main() -> int:
     finally:
         del password
     auth.save_cached(credential)
+    auth.clear_login_block()
     if auth.load_cached() is None:
         print(f"Login worked, but the token could not be written to {auth.cache_path()}.",
               file=sys.stderr)

@@ -14,6 +14,10 @@ Two behaviours matter more than the plumbing:
   its own (no password means every attempt would fail and count toward the
   10-attempt lockout), and a 401 keeps the cached token. A fresh token comes
   from the interactive `zepp-login` command.
+* Fork: with a password (ZEPP_PASSWORD or ZEPP_CREDENTIALS_FILE) a 401 still
+  triggers one automatic login -- the Zepp phone app invalidates the server's
+  token whenever it opens. One rejected login blocks further automatic logins
+  (see auth.block_login) until `zepp-login` succeeds.
 """
 
 from __future__ import annotations
@@ -29,7 +33,16 @@ from typing import Any
 
 import httpx
 
-from .auth import Credential, LoginError, clear_cached, load_cached, login, save_cached
+from .auth import (
+    Credential,
+    LoginError,
+    block_login,
+    clear_cached,
+    load_cached,
+    login,
+    login_blocked,
+    save_cached,
+)
 
 NO_TOKEN_MESSAGE = (
     "No valid Zepp token is cached and ZEPP_PASSWORD is not set, so this "
@@ -212,6 +225,7 @@ class ZeppClient:
         self._country = country
         self._client = http or httpx.Client(timeout=30)
         self._credential: Credential | None = None
+        self._login_block: str | None = None
         # Conservative pacing between outbound requests. Zepp's limits are
         # undocumented; one call per fetch page is the norm, and a multi-year
         # query walks many pages, so the gap is enforced here once rather
@@ -231,6 +245,10 @@ class ZeppClient:
         self.requests_sent = 0
 
     # -- auth ------------------------------------------------------------
+    @property
+    def can_login(self) -> bool:
+        return bool(self._email and self._password)
+
     def credential(self) -> Credential:
         if self._credential and not self._credential.expired:
             return self._credential
@@ -240,9 +258,20 @@ class ZeppClient:
             return cached
         if not (self._email and self._password):
             raise LoginError(NO_TOKEN_MESSAGE)
-        self._credential = login(
-            self._client, self._email, self._password, self._country
-        )
+        blocked = self._login_block or login_blocked()
+        if blocked:
+            raise LoginError(
+                f"Automatic login is blocked after a rejected attempt ({blocked}). "
+                "Check the stored credentials, then run `zepp-login` once."
+            )
+        try:
+            self._credential = login(
+                self._client, self._email, self._password, self._country
+            )
+        except LoginError as exc:
+            if not block_login(str(exc)):
+                self._login_block = str(exc)   # no cache file possible: block this process
+            raise
         save_cached(self._credential)
         return self._credential
 
@@ -768,9 +797,20 @@ def parse_lactate_threshold_events(payload: Any) -> list[dict[str, Any]]:
 
 def from_env() -> ZeppClient:
     # Fork: both optional. Without a password the client runs on the token
-    # cache only (see ZeppClient.credential).
+    # cache only (see ZeppClient.credential). ZEPP_CREDENTIALS_FILE (line 1
+    # e-mail, line 2 password) keeps the password out of the environment.
     email = os.environ.get("ZEPP_EMAIL") or None
     password = os.environ.get("ZEPP_PASSWORD") or None
+    creds_file = os.environ.get("ZEPP_CREDENTIALS_FILE")
+    if creds_file:
+        try:
+            lines = open(creds_file, encoding="utf-8").read().splitlines()
+        except OSError as exc:
+            raise LoginError(
+                f"ZEPP_CREDENTIALS_FILE is set but unreadable ({type(exc).__name__})."
+            ) from None
+        if len(lines) >= 2 and lines[0].strip() and lines[1]:
+            email, password = lines[0].strip(), lines[1]
     return ZeppClient(email, password, os.environ.get("ZEPP_COUNTRY", "US"))
 
 

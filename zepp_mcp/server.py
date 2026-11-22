@@ -16,7 +16,7 @@ from mcp.server import MCPServer
 
 from . import analysis, body, decode, events, metrics, sports, workouts
 from . import client as api
-from .auth import describe_expiry
+from .auth import describe_expiry, login_blocked
 from .codes import format_pace
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -1253,13 +1253,17 @@ def zepp_auth_status() -> dict[str, Any]:
         credential = _get_client().credential()
     except Exception as exc:
         return _fail(exc)
+    client = _get_client()
+    blocked = login_blocked()
     return {
         "status": "ok",
         "region_host": credential.region_host,
         "country_code": credential.country_code,
         "token_expires_at": describe_expiry(credential),
-        "note": "Only the API token is cached on disk. No health data is "
-                "stored by this server.",
+        "auto_login": ("off (no password)" if not client.can_login
+                       else f"blocked: {blocked}" if blocked else "enabled"),
+        "note": "Only the cached token file is checked here, not whether Zepp "
+                "still accepts it. No health data is stored by this server.",
     }
 
 

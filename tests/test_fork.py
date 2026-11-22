@@ -104,3 +104,52 @@ def test_zepp_login_failure_is_not_retried(monkeypatch, tmp_path):
     assert login_cli.main() == 1
     assert len(calls) == 1
     assert not (tmp_path / "token.json").exists()
+
+
+# -- automatic login with stored credentials ---------------------------------
+
+
+def test_credentials_file_enables_login(monkeypatch, tmp_path):
+    creds = tmp_path / "credentials"
+    creds.write_text("a@example.com\np@ss word$\n")
+    monkeypatch.delenv("ZEPP_EMAIL", raising=False)
+    monkeypatch.delenv("ZEPP_PASSWORD", raising=False)
+    monkeypatch.setenv("ZEPP_CREDENTIALS_FILE", str(creds))
+    client = api.from_env()
+    assert client.can_login
+    assert client._password == "p@ss word$"
+
+
+def test_rejected_auto_login_blocks_further_attempts(monkeypatch, tmp_path):
+    monkeypatch.setenv("ZEPP_TOKEN_CACHE", str(tmp_path / "token.json"))
+    attempts: list[int] = []
+
+    def reject(*args, **kwargs):
+        attempts.append(1)
+        raise auth.LoginError("rejected")
+
+    monkeypatch.setattr(api, "login", reject)
+    http = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(401)))
+    client = api.ZeppClient("a@example.com", "wrong", "DE", http=http,
+                            min_interval=0, cache=False)
+    _cache_token()
+    assert client.get("/v1/data/band_data.json", {}).http_status == 401
+    for _ in range(3):
+        with pytest.raises(auth.LoginError, match="blocked"):
+            client.get("/v1/data/band_data.json", {})
+    assert len(attempts) == 1                      # never more than one try
+    assert auth.login_blocked() == "rejected"
+    fresh = api.ZeppClient("a@example.com", "wrong", "DE", http=http,
+                           min_interval=0, cache=False)
+    with pytest.raises(auth.LoginError, match="blocked"):
+        fresh.credential()                         # survives a restart
+    assert len(attempts) == 1
+
+
+def test_zepp_login_clears_the_block(monkeypatch, tmp_path):
+    _login_env(monkeypatch, tmp_path, lambda: auth.Credential(
+        app_token="t", user_id="1", region_host="h", country_code="DE",
+        expires_at=time.time() + 86400))
+    auth.block_login("rejected")
+    assert login_cli.main() == 0
+    assert auth.login_blocked() is None

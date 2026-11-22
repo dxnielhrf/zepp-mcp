@@ -275,6 +275,50 @@ def clear_cached() -> None:
         pass
 
 
+# --------------------------------------------------------------------------
+# Fork: automatic-login block
+# --------------------------------------------------------------------------
+# After one rejected automatic login the server stops trying, so a wrong or
+# changed stored password cannot walk the account into the 10-attempt
+# lockout. The block is a file next to the token so it survives restarts;
+# a successful interactive `zepp-login` removes it.
+
+def login_block_path() -> Path:
+    return cache_path().with_name("login_blocked")
+
+
+def login_blocked() -> str | None:
+    if not cache_enabled():
+        return None
+    try:
+        return login_block_path().read_text().strip() or "blocked"
+    except OSError:
+        return None
+
+
+def block_login(reason: str) -> bool:
+    """Persist the block. False if it could not be written (or caching is off)."""
+    if not cache_enabled():
+        return False
+    try:
+        path = login_block_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(reason)
+        path.chmod(0o600)
+        return True
+    except OSError:
+        return False
+
+
+def clear_login_block() -> None:
+    if not cache_enabled():
+        return
+    try:
+        login_block_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def describe_expiry(credential: Credential) -> str:
     when = dt.datetime.fromtimestamp(credential.expires_at, dt.UTC)
     return when.isoformat(timespec="seconds")
